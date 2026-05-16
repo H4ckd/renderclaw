@@ -23,8 +23,10 @@ Include:
 Before exposing RenderClaw publicly:
 
 - Configure `ALLOWED_DOMAINS`.
-- Protect `/admin/*` behind authentication or a private network.
+- Configure `ADMIN_TOKEN` for `/admin/*`.
+- Keep `/admin/*` behind authentication or a private network.
 - Run behind a reverse proxy with request size and rate limits.
+- Tune RenderClaw's built-in `RATE_LIMIT_*` and `MAX_QUEUE_SIZE` settings.
 - Keep `OPENAI_API_KEY` only in environment variables or private config.
 - Do not commit `data/`, logs, caches, SQLite files, or local config files.
 - Monitor memory and render queue depth.

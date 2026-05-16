@@ -48,7 +48,13 @@ function createHtmlCache({ cacheDir, cacheTtlMs, staleTtlMs }) {
     };
   }
 
-  return { read, write };
+  function healthCheck() {
+    const probePath = path.join(cacheDir, `.renderclaw-health-${process.pid}-${Date.now()}`);
+    fs.writeFileSync(probePath, "ok");
+    fs.unlinkSync(probePath);
+  }
+
+  return { healthCheck, read, write };
 }
 
 module.exports = { createHtmlCache };

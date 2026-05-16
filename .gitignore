@@ -26,6 +26,7 @@
 /tmp
 /config/*.local.json
 /config/secrets.json
+/private
 
 # misc
 .DS_Store

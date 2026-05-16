@@ -5,7 +5,9 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "check": "node --check app.js",
+    "check": "node scripts/check-src.js",
+    "smoke": "node scripts/smoke.js",
+    "test": "node --test",
     "audit": "npm audit --omit=dev"
   },
   "keywords": [

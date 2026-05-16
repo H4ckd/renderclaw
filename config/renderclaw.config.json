@@ -6,7 +6,8 @@
   "server": {
     "port": 5000,
     "dataDir": "data",
-    "allowedDomains": []
+    "allowedDomains": [],
+    "adminTokenEnv": "ADMIN_TOKEN"
   },
   "cache": {
     "ttlSeconds": 3600,
@@ -14,10 +15,22 @@
   },
   "rendering": {
     "concurrency": 3,
+    "maxQueueSize": 100,
     "maxRenderCount": 80,
     "pageTimeoutMs": 45000,
     "extraWaitMs": 1200,
     "maxHtmlBytes": 5242880
+  },
+  "rateLimit": {
+    "enabled": true,
+    "windowMs": 60000,
+    "maxRequestsPerIp": 120,
+    "maxRequestsPerDomain": 240
+  },
+  "crawl": {
+    "maxQueueBatch": 50,
+    "maxRenderBatch": 5,
+    "maxDepth": 2
   },
   "ai": {
     "enabled": true,

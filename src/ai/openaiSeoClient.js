@@ -2,11 +2,12 @@
 // The public contract is analyze({ targetUrl, crawlerProfile, extracted }).
 // Swap or extend this module to support additional providers while keeping the
 // returned analysis shape stable for renderer.js and database.js.
-function createOpenAiSeoClient(config, logger) {
+function createOpenAiSeoClient(config, logger, metrics) {
   async function analyze({ targetUrl, crawlerProfile, extracted }) {
     // AI is optional by design. RenderClaw must still prerender pages in local
     // development, offline deployments, and privacy-focused installations.
     if (!config.enabled || !config.apiKey) {
+      metrics.increment("aiFallbacks");
       return fallbackAnalysis(crawlerProfile, "AI disabled or OPENAI_API_KEY missing");
     }
 
@@ -33,6 +34,7 @@ function createOpenAiSeoClient(config, logger) {
       const text = extractOutputText(payload);
       const parsed = JSON.parse(text);
 
+      metrics.increment("aiSuccesses");
       return {
         provider: "openai",
         model: config.model,
@@ -42,6 +44,7 @@ function createOpenAiSeoClient(config, logger) {
       };
     } catch (error) {
       logger.log("warn", "AI SEO analysis failed; using fallback", { error: error.message });
+      metrics.increment("aiFallbacks");
       return fallbackAnalysis(crawlerProfile, error.message);
     } finally {
       clearTimeout(timeout);
@@ -58,11 +61,11 @@ function buildRequest(model, targetUrl, crawlerProfile, extracted) {
   return {
     model,
     instructions: [
-      "Sei un SEO rendering optimizer.",
-      "Rispondi solo con JSON valido aderente allo schema.",
-      "Non inventare fatti, brand, offerte, prezzi, recensioni o contenuti non presenti nei dati.",
-      "Ottimizza per il crawler indicato usando metadata, canonical, social tags e structured data sicuri.",
-      "Non creare keyword stuffing e non cambiare l'intento della pagina."
+      "You are an SEO rendering optimizer.",
+      "Return only valid JSON that matches the provided schema.",
+      "Do not invent facts, brands, offers, prices, reviews, or content that is not present in the provided page data.",
+      "Optimize for the specified crawler using safe metadata, canonical URLs, social tags, and structured data.",
+      "Do not create keyword stuffing and do not change the page intent."
     ].join(" "),
     input: JSON.stringify({
       url: targetUrl.href,

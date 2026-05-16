@@ -1,13 +1,17 @@
+const crypto = require("node:crypto");
+
 const { extractPageData } = require("./pageExtractor");
 const { shouldAbortRequest } = require("./requestPolicy");
 const { normalizeAbsolute, optimizeHtml } = require("./seoOptimizer");
+const { analyzePageSeo } = require("../seo/pageAnalyzer");
 
 // Coordinates the complete render pipeline for one URL and one crawler profile.
 // Route handlers should not call Puppeteer directly; they enqueue this method
 // through renderQueue so concurrency stays controlled.
-function createRenderer({ aiSeoClient, browserManager, config, htmlCache, pageStore }) {
-  async function renderPage(targetUrl, pageRecord, crawlerProfile) {
+function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metrics, pageStore }) {
+  async function renderPage(targetUrl, pageRecord, crawlerProfile, context = {}) {
     const started = Date.now();
+    const renderId = crypto.randomUUID();
     let tab;
 
     try {
@@ -39,6 +43,8 @@ function createRenderer({ aiSeoClient, browserManager, config, htmlCache, pageSt
       // based only on the content actually found in the rendered page.
       const extracted = await extractPageData(tab);
       extracted.canonical = normalizeAbsolute(targetUrl, extracted.canonical);
+      const seoReport = analyzePageSeo(targetUrl, extracted);
+      pageStore.saveSeoReport(pageRecord.id, seoReport);
 
       const aiAnalysis = await aiSeoClient.analyze({ targetUrl, crawlerProfile, extracted });
       pageStore.saveAiAnalysis(pageRecord.id, crawlerProfile.id, aiAnalysis);
@@ -63,13 +69,29 @@ function createRenderer({ aiSeoClient, browserManager, config, htmlCache, pageSt
         response ? response.status() : null
       );
       pageStore.saveLinks(pageRecord.id, extracted.links);
-      pageStore.recordEvent(pageRecord.id, "rendered", { byteSize: cacheData.byteSize, timingMs });
+      pageStore.saveInternalSiteUrls(pageRecord, extracted.links, config.crawl.maxDepth);
+      pageStore.recordEvent(pageRecord.id, "rendered", {
+        byteSize: cacheData.byteSize,
+        crawlerProfile: crawlerProfile.id,
+        renderId,
+        requestId: context.requestId || "",
+        timingMs,
+      });
+      metrics.increment("renderSuccesses");
+      metrics.recordRenderTime(timingMs);
 
       return pageStore.getPage(targetUrl.href);
     } catch (error) {
       const timingMs = Date.now() - started;
       pageStore.markError(pageRecord.id, error, timingMs);
-      pageStore.recordEvent(pageRecord.id, "error", { message: error.message });
+      pageStore.recordEvent(pageRecord.id, "error", {
+        crawlerProfile: crawlerProfile.id,
+        message: error.message,
+        renderId,
+        requestId: context.requestId || "",
+      });
+      metrics.increment("renderErrors");
+      metrics.recordRenderTime(timingMs);
       throw error;
     } finally {
       if (tab) await tab.close().catch(() => {});

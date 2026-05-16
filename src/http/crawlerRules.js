@@ -67,4 +67,5 @@ module.exports = {
   buildTargetUrl,
   isCrawler,
   shouldIgnoreRequest,
+  validateDomain,
 };

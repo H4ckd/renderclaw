@@ -16,7 +16,7 @@ Human visitors are redirected to the original website. Crawlers receive a render
 
 Meet **Nexa**, the RenderClaw cyber lynx.
 
-Nexa represents the project’s core traits: sharp crawler instincts, fast rendering, careful protection of source content, and clean developer-friendly intelligence. The lynx was chosen for its agility, precision, and watchful nature.
+Nexa represents the project's core traits: sharp crawler instincts, fast rendering, careful protection of source content, and clean developer-friendly intelligence. The lynx was chosen for its agility, precision, and watchful nature.
 
 ## Features
 
@@ -24,9 +24,12 @@ Nexa represents the project’s core traits: sharp crawler instincts, fast rende
 - Real browser rendering with Puppeteer.
 - Crawler-specific HTML cache variants.
 - Stale-while-refresh behavior for fast crawler responses.
+- In-memory rate limiting and render queue caps for safer public deployments.
+- Request IDs on every response for easier debugging.
 - SQLite storage for analyzed sites, pages, links, render events, cache variants, and AI analyses.
 - Optional AI SEO optimization with OpenAI.
 - Conservative metadata improvements: title, description, canonical, robots, Open Graph, Twitter Cards, and JSON-LD.
+- Deterministic SEO scoring for rendered pages, including canonical, robots, headings, images, social metadata, and JSON-LD checks.
 - CSS and images remain available to crawlers.
 - Heavy media, fonts, and known tracking hosts are blocked during render.
 - Render concurrency limits and browser reuse to reduce memory pressure.
@@ -47,11 +50,22 @@ Health check:
 curl http://localhost:5000/health
 ```
 
+Every response includes an `X-Request-Id` header. You can also provide your own `X-Request-Id` from a reverse proxy or client.
+
 Render a page as Googlebot:
 
 ```bash
 curl -A "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" \
   http://localhost:5000/example.com/
+```
+
+Run checks, tests, and the smoke test:
+
+```bash
+npm run check
+npm test
+npm run smoke
+npm run audit
 ```
 
 ## How It Works
@@ -133,8 +147,10 @@ The AI layer is intentionally conservative. It should improve crawler metadata b
 Before exposing RenderClaw publicly:
 
 - Set `ALLOWED_DOMAINS`.
-- Protect `/admin/*` behind authentication, a VPN, or a private network.
+- Set `ADMIN_TOKEN` to protect `/admin/*`.
+- Keep `/admin/*` behind a VPN or private network when possible.
 - Use a reverse proxy with rate limiting.
+- Tune `RATE_LIMIT_*` and `MAX_QUEUE_SIZE` for your deployment size.
 - Keep `OPENAI_API_KEY` out of Git.
 - Monitor memory, browser health, render queue depth, and cache size.
 - Do not use RenderClaw to serve misleading crawler-only content.
@@ -159,10 +175,26 @@ The `data/` directory is ignored by Git.
 
 ```text
 GET /health
+GET /metrics
 GET /admin/sites
+GET /admin/sites/:domain/discovery
+POST /admin/sites/:domain/discovery
+GET /admin/sites/:domain/report
+GET /admin/sites/:domain/urls
+POST /admin/sites/:domain/crawl/queue
+POST /admin/sites/:domain/crawl/render
 GET /admin/pages
+GET /admin/pages/:id/report
 GET /:domain/*?
 ```
+
+Metrics and admin endpoints require:
+
+```text
+Authorization: Bearer <ADMIN_TOKEN>
+```
+
+If `ADMIN_TOKEN` is not set in development, these endpoints remain open for local testing. In production, RenderClaw refuses to start without both `ADMIN_TOKEN` and `ALLOWED_DOMAINS`.
 
 ## Project Structure
 

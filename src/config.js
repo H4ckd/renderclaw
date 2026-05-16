@@ -57,6 +57,62 @@ function booleanFromEnv(name, fallback) {
   return fallback;
 }
 
+function validateConfig(runtimeConfig) {
+  const errors = [];
+
+  if (!runtimeConfig.appName) errors.push("app.name is required");
+  if (!runtimeConfig.appSlug) errors.push("app.slug is required");
+  if (!Number.isInteger(runtimeConfig.port) || runtimeConfig.port < 1 || runtimeConfig.port > 65535) {
+    errors.push("server.port must be a valid TCP port");
+  }
+  if (!runtimeConfig.dataDir) errors.push("server.dataDir is required");
+  if (!Number.isInteger(runtimeConfig.concurrency) || runtimeConfig.concurrency < 1) {
+    errors.push("rendering.concurrency must be >= 1");
+  }
+  if (!Number.isInteger(runtimeConfig.maxQueueSize) || runtimeConfig.maxQueueSize < 0) {
+    errors.push("rendering.maxQueueSize must be >= 0");
+  }
+  if (!Number.isInteger(runtimeConfig.maxRenderCount) || runtimeConfig.maxRenderCount < 1) {
+    errors.push("rendering.maxRenderCount must be >= 1");
+  }
+  if (!Number.isInteger(runtimeConfig.pageTimeoutMs) || runtimeConfig.pageTimeoutMs < 1000) {
+    errors.push("rendering.pageTimeoutMs must be >= 1000");
+  }
+  if (!Number.isInteger(runtimeConfig.maxHtmlBytes) || runtimeConfig.maxHtmlBytes < 1024) {
+    errors.push("rendering.maxHtmlBytes must be >= 1024");
+  }
+  if (runtimeConfig.rateLimit.enabled) {
+    if (!Number.isInteger(runtimeConfig.rateLimit.windowMs) || runtimeConfig.rateLimit.windowMs < 1000) {
+      errors.push("rateLimit.windowMs must be >= 1000");
+    }
+    if (!Number.isInteger(runtimeConfig.rateLimit.maxRequestsPerIp) || runtimeConfig.rateLimit.maxRequestsPerIp < 1) {
+      errors.push("rateLimit.maxRequestsPerIp must be >= 1");
+    }
+    if (!Number.isInteger(runtimeConfig.rateLimit.maxRequestsPerDomain) || runtimeConfig.rateLimit.maxRequestsPerDomain < 1) {
+      errors.push("rateLimit.maxRequestsPerDomain must be >= 1");
+    }
+  }
+  if (!Number.isInteger(runtimeConfig.crawl.maxQueueBatch) || runtimeConfig.crawl.maxQueueBatch < 1) {
+    errors.push("crawl.maxQueueBatch must be >= 1");
+  }
+  if (!Number.isInteger(runtimeConfig.crawl.maxRenderBatch) || runtimeConfig.crawl.maxRenderBatch < 1) {
+    errors.push("crawl.maxRenderBatch must be >= 1");
+  }
+  if (!Number.isInteger(runtimeConfig.crawl.maxDepth) || runtimeConfig.crawl.maxDepth < 0) {
+    errors.push("crawl.maxDepth must be >= 0");
+  }
+  if (runtimeConfig.isProduction && runtimeConfig.allowedDomains.length === 0) {
+    errors.push("ALLOWED_DOMAINS is required when NODE_ENV=production");
+  }
+  if (runtimeConfig.isProduction && !runtimeConfig.adminToken) {
+    errors.push("ADMIN_TOKEN is required when NODE_ENV=production");
+  }
+
+  if (errors.length) {
+    throw new Error(`Invalid RenderClaw configuration:\n- ${errors.join("\n- ")}`);
+  }
+}
+
 const configFilePath = path.resolve(process.env.CONFIG_FILE || DEFAULT_CONFIG_FILE);
 const fileConfig = deepMerge(
   loadConfigFile(configFilePath, true),
@@ -66,6 +122,7 @@ const fileConfig = deepMerge(
 // Flatten the JSON config into the runtime shape used by the rest of the app.
 // Add new public config here only after adding it to config/renderclaw.config.json.
 const config = {
+  nodeEnv: process.env.NODE_ENV || "development",
   appName: fileConfig.app.name,
   appSlug: fileConfig.app.slug,
   port: numberFromEnv("PORT", fileConfig.server.port),
@@ -73,11 +130,27 @@ const config = {
   cacheTtlMs: numberFromEnv("CACHE_TTL_SECONDS", fileConfig.cache.ttlSeconds) * 1000,
   staleTtlMs: numberFromEnv("STALE_TTL_SECONDS", fileConfig.cache.staleTtlSeconds) * 1000,
   concurrency: numberFromEnv("RENDER_CONCURRENCY", fileConfig.rendering.concurrency),
+  maxQueueSize: numberFromEnv("MAX_QUEUE_SIZE", fileConfig.rendering.maxQueueSize),
   maxRenderCount: numberFromEnv("MAX_RENDER_COUNT", fileConfig.rendering.maxRenderCount),
   pageTimeoutMs: numberFromEnv("PAGE_TIMEOUT_MS", fileConfig.rendering.pageTimeoutMs),
   extraWaitMs: numberFromEnv("EXTRA_WAIT_MS", fileConfig.rendering.extraWaitMs),
   maxHtmlBytes: numberFromEnv("MAX_HTML_BYTES", fileConfig.rendering.maxHtmlBytes),
   allowedDomains: parseList(process.env.ALLOWED_DOMAINS || fileConfig.server.allowedDomains),
+  adminToken: process.env[fileConfig.server.adminTokenEnv || "ADMIN_TOKEN"] || "",
+  rateLimit: {
+    enabled: booleanFromEnv("RATE_LIMIT_ENABLED", fileConfig.rateLimit.enabled),
+    windowMs: numberFromEnv("RATE_LIMIT_WINDOW_MS", fileConfig.rateLimit.windowMs),
+    maxRequestsPerIp: numberFromEnv("RATE_LIMIT_MAX_REQUESTS_PER_IP", fileConfig.rateLimit.maxRequestsPerIp),
+    maxRequestsPerDomain: numberFromEnv(
+      "RATE_LIMIT_MAX_REQUESTS_PER_DOMAIN",
+      fileConfig.rateLimit.maxRequestsPerDomain
+    ),
+  },
+  crawl: {
+    maxQueueBatch: numberFromEnv("CRAWL_MAX_QUEUE_BATCH", fileConfig.crawl?.maxQueueBatch || 50),
+    maxRenderBatch: numberFromEnv("CRAWL_MAX_RENDER_BATCH", fileConfig.crawl?.maxRenderBatch || 5),
+    maxDepth: numberFromEnv("CRAWL_MAX_DEPTH", fileConfig.crawl?.maxDepth || 2),
+  },
   ai: {
     enabled: booleanFromEnv("AI_ENABLED", fileConfig.ai.enabled),
     provider: stringFromEnv("AI_PROVIDER", fileConfig.ai.provider),
@@ -86,6 +159,9 @@ const config = {
     timeoutMs: numberFromEnv("AI_TIMEOUT_MS", fileConfig.ai.timeoutMs),
   },
 };
+config.isProduction = config.nodeEnv === "production";
+
+validateConfig(config);
 
 // Runtime paths are derived from dataDir so deployments can move all mutable
 // files by changing DATA_DIR or server.dataDir in the config file.

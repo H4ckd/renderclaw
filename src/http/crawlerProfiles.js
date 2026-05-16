@@ -52,4 +52,36 @@ function detectCrawlerProfile(req) {
   };
 }
 
-module.exports = { detectCrawlerProfile };
+function getCrawlerProfileById(id) {
+  const profiles = {
+    google: {
+      id: "google",
+      name: "Googlebot",
+      priorities: ["indexability", "canonical", "structured_data", "content_completeness", "core_web_vitals"],
+    },
+    bing: {
+      id: "bing",
+      name: "Bingbot",
+      priorities: ["indexability", "canonical", "structured_data", "clean_head"],
+    },
+    social: {
+      id: "social",
+      name: "Social preview crawler",
+      priorities: ["open_graph", "twitter_cards", "title", "description", "primary_image"],
+    },
+    validator: {
+      id: "validator",
+      name: "Validator crawler",
+      priorities: ["valid_markup", "robots", "canonical", "performance"],
+    },
+    generic: {
+      id: "generic",
+      name: "Generic crawler",
+      priorities: ["indexability", "title", "description", "canonical"],
+    },
+  };
+
+  return profiles[id] || profiles.generic;
+}
+
+module.exports = { detectCrawlerProfile, getCrawlerProfileById };
