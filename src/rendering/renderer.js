@@ -8,13 +8,40 @@ const { analyzePageSeo } = require("../seo/pageAnalyzer");
 // Coordinates the complete render pipeline for one URL and one crawler profile.
 // Route handlers should not call Puppeteer directly; they enqueue this method
 // through renderQueue so concurrency stays controlled.
-function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metrics, pageStore }) {
+function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metrics, pageStore, sourceProbe = null }) {
   async function renderPage(targetUrl, pageRecord, crawlerProfile, context = {}) {
     const started = Date.now();
     const renderId = crypto.randomUUID();
     let tab;
 
     try {
+      const existingCache = pageStore.getPageCache(pageRecord.id, crawlerProfile.id);
+      const existingCacheStatus = htmlCache.inspect(existingCache);
+      const canProbe = sourceProbe && existingCacheStatus?.exists && context.probeSource !== false;
+
+      if (canProbe) {
+        const probe = await sourceProbe.probe(targetUrl, {
+          etag: existingCache.source_etag || pageRecord.source_etag || "",
+          lastModified: existingCache.source_last_modified || pageRecord.source_last_modified || "",
+        });
+        pageStore.markSourceProbe(pageRecord.id, probe);
+
+        if (!probe.changed) {
+          const cacheData = htmlCache.nextExpiry(targetUrl.href);
+          pageStore.refreshCacheVariant(pageRecord.id, crawlerProfile.id, cacheData, probe);
+          pageStore.recordEvent(pageRecord.id, "source_unchanged", {
+            crawlerProfile: crawlerProfile.id,
+            renderId,
+            requestId: context.requestId || "",
+            sourceStatus: probe.status,
+          });
+          metrics.increment("sourceProbeUnchanged");
+          return pageStore.getPage(targetUrl.href);
+        }
+
+        metrics.increment(probe.error ? "sourceProbeErrors" : "sourceProbeChanged");
+      }
+
       const activeBrowser = await browserManager.getBrowser();
       tab = await activeBrowser.newPage();
       await tab.setCacheEnabled(true);
@@ -60,13 +87,15 @@ function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metric
 
       const cacheData = htmlCache.write(targetUrl.href, html, crawlerProfile.id);
       const timingMs = Date.now() - started;
+      const responseProbe = sourceProbeFromResponse(response);
 
       pageStore.markCached(
         pageRecord.id,
         cacheData,
         extracted,
         timingMs,
-        response ? response.status() : null
+        response ? response.status() : null,
+        responseProbe
       );
       pageStore.saveLinks(pageRecord.id, extracted.links);
       pageStore.saveInternalSiteUrls(pageRecord, extracted.links, config.crawl.maxDepth);
@@ -99,6 +128,17 @@ function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metric
   }
 
   return { renderPage };
+}
+
+function sourceProbeFromResponse(response) {
+  if (!response) return {};
+  const headers = response.headers();
+  return {
+    checkedAt: new Date().toISOString(),
+    etag: headers.etag || "",
+    lastModified: headers["last-modified"] || "",
+    status: response.status(),
+  };
 }
 
 module.exports = { createRenderer };

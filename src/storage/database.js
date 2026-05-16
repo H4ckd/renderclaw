@@ -44,6 +44,10 @@ function createDatabase(dbPath) {
       render_count INTEGER NOT NULL DEFAULT 0,
       last_rendered_at TEXT,
       cache_expires_at TEXT,
+      source_etag TEXT,
+      source_last_modified TEXT,
+      source_checked_at TEXT,
+      source_status INTEGER,
       last_error TEXT,
       timing_ms INTEGER,
       FOREIGN KEY(site_id) REFERENCES sites(id)
@@ -79,6 +83,10 @@ function createDatabase(dbPath) {
       byte_size INTEGER NOT NULL DEFAULT 0,
       last_rendered_at TEXT NOT NULL,
       cache_expires_at TEXT NOT NULL,
+      source_etag TEXT,
+      source_last_modified TEXT,
+      source_checked_at TEXT,
+      source_status INTEGER,
       timing_ms INTEGER,
       UNIQUE(page_id, crawler_profile),
       FOREIGN KEY(page_id) REFERENCES pages(id)
@@ -135,8 +143,30 @@ function createDatabase(dbPath) {
       UNIQUE(site_id, url),
       FOREIGN KEY(site_id) REFERENCES sites(id)
     );
+
+    CREATE TABLE IF NOT EXISTS redirect_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      site_id INTEGER NOT NULL,
+      url TEXT NOT NULL,
+      final_url TEXT,
+      final_status INTEGER,
+      hop_count INTEGER NOT NULL DEFAULT 0,
+      chain TEXT NOT NULL,
+      error TEXT,
+      checked_at TEXT NOT NULL,
+      UNIQUE(site_id, url),
+      FOREIGN KEY(site_id) REFERENCES sites(id)
+    );
   `);
   ensureColumn(db, "site_urls", "depth", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "pages", "source_etag", "TEXT");
+  ensureColumn(db, "pages", "source_last_modified", "TEXT");
+  ensureColumn(db, "pages", "source_checked_at", "TEXT");
+  ensureColumn(db, "pages", "source_status", "INTEGER");
+  ensureColumn(db, "page_caches", "source_etag", "TEXT");
+  ensureColumn(db, "page_caches", "source_last_modified", "TEXT");
+  ensureColumn(db, "page_caches", "source_checked_at", "TEXT");
+  ensureColumn(db, "page_caches", "source_status", "INTEGER");
 
   const statements = {
     upsertSite: db.prepare(`
@@ -193,18 +223,103 @@ function createDatabase(dbPath) {
     `),
     upsertPageCache: db.prepare(`
       INSERT INTO page_caches (
-        page_id, crawler_profile, html_path, cache_key, byte_size, last_rendered_at, cache_expires_at, timing_ms
+        page_id, crawler_profile, html_path, cache_key, byte_size, last_rendered_at, cache_expires_at,
+        source_etag, source_last_modified, source_checked_at, source_status, timing_ms
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(page_id, crawler_profile) DO UPDATE SET
         html_path = excluded.html_path,
         cache_key = excluded.cache_key,
         byte_size = excluded.byte_size,
         last_rendered_at = excluded.last_rendered_at,
         cache_expires_at = excluded.cache_expires_at,
+        source_etag = excluded.source_etag,
+        source_last_modified = excluded.source_last_modified,
+        source_checked_at = excluded.source_checked_at,
+        source_status = excluded.source_status,
         timing_ms = excluded.timing_ms
     `),
-    getPageCache: db.prepare("SELECT * FROM page_caches WHERE page_id = ? AND crawler_profile = ?"),
+    updateSourceProbe: db.prepare(`
+      UPDATE pages
+      SET source_etag = ?,
+          source_last_modified = ?,
+          source_checked_at = ?,
+          source_status = ?
+      WHERE id = ?
+    `),
+    refreshPageCache: db.prepare(`
+      UPDATE page_caches
+      SET cache_expires_at = ?,
+          source_etag = ?,
+          source_last_modified = ?,
+          source_checked_at = ?,
+          source_status = ?
+      WHERE page_id = ? AND crawler_profile = ?
+    `),
+    refreshPageCacheFields: db.prepare(`
+      UPDATE pages
+      SET cache_expires_at = ?,
+          source_etag = ?,
+          source_last_modified = ?,
+          source_checked_at = ?,
+          source_status = ?,
+          last_error = NULL
+      WHERE id = ?
+    `),
+    getPageCache: db.prepare(`
+      SELECT page_caches.*, pages.url, sites.domain
+      FROM page_caches
+      JOIN pages ON pages.id = page_caches.page_id
+      JOIN sites ON sites.id = pages.site_id
+      WHERE page_caches.page_id = ? AND page_caches.crawler_profile = ?
+    `),
+    listPageCacheVariants: db.prepare(`
+      SELECT page_caches.*, pages.url, sites.domain
+      FROM page_caches
+      JOIN pages ON pages.id = page_caches.page_id
+      JOIN sites ON sites.id = pages.site_id
+      WHERE page_caches.page_id = ?
+      ORDER BY page_caches.crawler_profile ASC
+    `),
+    listCacheByUrl: db.prepare(`
+      SELECT page_caches.*, pages.url, sites.domain
+      FROM page_caches
+      JOIN pages ON pages.id = page_caches.page_id
+      JOIN sites ON sites.id = pages.site_id
+      WHERE pages.url = ?
+    `),
+    listCacheByUrlAndProfile: db.prepare(`
+      SELECT page_caches.*, pages.url, sites.domain
+      FROM page_caches
+      JOIN pages ON pages.id = page_caches.page_id
+      JOIN sites ON sites.id = pages.site_id
+      WHERE pages.url = ? AND page_caches.crawler_profile = ?
+    `),
+    listCacheByDomain: db.prepare(`
+      SELECT page_caches.*, pages.url, sites.domain
+      FROM page_caches
+      JOIN pages ON pages.id = page_caches.page_id
+      JOIN sites ON sites.id = pages.site_id
+      WHERE sites.domain = ?
+    `),
+    listCacheByDomainAndProfile: db.prepare(`
+      SELECT page_caches.*, pages.url, sites.domain
+      FROM page_caches
+      JOIN pages ON pages.id = page_caches.page_id
+      JOIN sites ON sites.id = pages.site_id
+      WHERE sites.domain = ? AND page_caches.crawler_profile = ?
+    `),
+    deletePageCache: db.prepare("DELETE FROM page_caches WHERE id = ?"),
+    countPageCaches: db.prepare("SELECT COUNT(*) AS count FROM page_caches WHERE page_id = ?"),
+    clearPageCacheFields: db.prepare(`
+      UPDATE pages
+      SET status = 'new',
+          html_path = NULL,
+          cache_key = NULL,
+          byte_size = 0,
+          cache_expires_at = NULL
+      WHERE id = ?
+    `),
     insertAiAnalysis: db.prepare(`
       INSERT INTO ai_analyses (page_id, crawler_profile, provider, model, status, summary, recommendations, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -260,11 +375,26 @@ function createDatabase(dbPath) {
       LIMIT ?
     `),
     listDiscoveredSiteUrls: db.prepare(`
-      SELECT site_urls.*
+      SELECT
+        site_urls.*,
+        COALESCE(inbound.inbound_count, 0) AS inbound_count
       FROM site_urls
       JOIN sites ON sites.id = site_urls.site_id
+      LEFT JOIN (
+        SELECT links.target_url, COUNT(DISTINCT links.source_page_id) AS inbound_count
+        FROM links
+        JOIN pages source_pages ON source_pages.id = links.source_page_id
+        JOIN sites source_sites ON source_sites.id = source_pages.site_id
+        WHERE source_sites.domain = ? AND links.target_domain = ?
+        GROUP BY links.target_url
+      ) inbound ON inbound.target_url = site_urls.url
       WHERE sites.domain = ? AND site_urls.status = 'discovered'
-      ORDER BY site_urls.last_seen_at ASC, site_urls.url ASC
+      ORDER BY
+        CASE WHEN site_urls.sitemap_url IS NOT NULL AND site_urls.sitemap_url != '' THEN 0 ELSE 1 END,
+        COALESCE(inbound.inbound_count, 0) DESC,
+        site_urls.depth ASC,
+        site_urls.last_seen_at ASC,
+        site_urls.url ASC
       LIMIT ?
     `),
     listQueuedSiteUrls: db.prepare(`
@@ -296,6 +426,85 @@ function createDatabase(dbPath) {
       ) inbound ON inbound.target_url = site_urls.url
       WHERE sites.domain = ?
       ORDER BY site_urls.url ASC
+    `),
+    listDuplicateCanonicalGroups: db.prepare(`
+      SELECT
+        pages.canonical,
+        COUNT(*) AS page_count,
+        GROUP_CONCAT(pages.url, '\n') AS urls
+      FROM pages
+      JOIN sites ON sites.id = pages.site_id
+      WHERE sites.domain = ? AND pages.canonical IS NOT NULL AND TRIM(pages.canonical) != ''
+      GROUP BY pages.canonical
+      HAVING COUNT(*) > 1
+      ORDER BY page_count DESC, pages.canonical ASC
+      LIMIT 100
+    `),
+    upsertRedirectCheck: db.prepare(`
+      INSERT INTO redirect_checks (
+        site_id, url, final_url, final_status, hop_count, chain, error, checked_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(site_id, url) DO UPDATE SET
+        final_url = excluded.final_url,
+        final_status = excluded.final_status,
+        hop_count = excluded.hop_count,
+        chain = excluded.chain,
+        error = excluded.error,
+        checked_at = excluded.checked_at
+    `),
+    listRedirectChecks: db.prepare(`
+      SELECT redirect_checks.*
+      FROM redirect_checks
+      JOIN sites ON sites.id = redirect_checks.site_id
+      WHERE sites.domain = ?
+      ORDER BY redirect_checks.checked_at DESC
+      LIMIT ?
+    `),
+    listInternalLinkGraph: db.prepare(`
+      SELECT
+        source_pages.url AS source_url,
+        links.target_url,
+        links.anchor_text,
+        links.rel,
+        COUNT(*) AS link_count,
+        MIN(links.first_seen_at) AS first_seen_at
+      FROM links
+      JOIN pages source_pages ON source_pages.id = links.source_page_id
+      JOIN sites source_sites ON source_sites.id = source_pages.site_id
+      WHERE source_sites.domain = ? AND links.target_domain = ?
+      GROUP BY source_pages.url, links.target_url, links.anchor_text, links.rel
+      ORDER BY source_pages.url ASC, links.target_url ASC
+      LIMIT ?
+    `),
+    listInboundLinks: db.prepare(`
+      SELECT
+        source_pages.url AS source_url,
+        links.target_url,
+        links.anchor_text,
+        links.rel,
+        links.first_seen_at
+      FROM links
+      JOIN pages source_pages ON source_pages.id = links.source_page_id
+      JOIN sites source_sites ON source_sites.id = source_pages.site_id
+      WHERE source_sites.domain = ? AND links.target_domain = ? AND links.target_url = ?
+      ORDER BY source_pages.url ASC, links.anchor_text ASC
+      LIMIT ?
+    `),
+    listOutboundLinks: db.prepare(`
+      SELECT
+        source_pages.url AS source_url,
+        links.target_url,
+        links.target_domain,
+        links.anchor_text,
+        links.rel,
+        links.first_seen_at
+      FROM links
+      JOIN pages source_pages ON source_pages.id = links.source_page_id
+      JOIN sites source_sites ON source_sites.id = source_pages.site_id
+      WHERE source_sites.domain = ? AND source_pages.url = ?
+      ORDER BY links.target_url ASC, links.anchor_text ASC
+      LIMIT ?
     `),
     updateSiteUrlStatus: db.prepare("UPDATE site_urls SET status = ?, last_seen_at = ? WHERE id = ?"),
     updateSiteUrlStatusByUrl: db.prepare(`
@@ -335,7 +544,7 @@ function createDatabase(dbPath) {
     return statements.getSite.get(domain);
   }
 
-  function markCached(pageId, cacheData, extracted, timingMs, httpStatus) {
+  function markCached(pageId, cacheData, extracted, timingMs, httpStatus, sourceProbe = {}) {
     // pages keeps the latest page-level SEO summary; page_caches keeps the
     // per-crawler rendered artifact metadata.
     const now = new Date();
@@ -362,7 +571,42 @@ function createDatabase(dbPath) {
       cacheData.byteSize,
       now.toISOString(),
       cacheData.expiresAt,
+      sourceProbe.etag || "",
+      sourceProbe.lastModified || "",
+      sourceProbe.checkedAt || "",
+      sourceProbe.status || null,
       timingMs
+    );
+    markSourceProbe(pageId, sourceProbe);
+  }
+
+  function markSourceProbe(pageId, sourceProbe = {}) {
+    statements.updateSourceProbe.run(
+      sourceProbe.etag || "",
+      sourceProbe.lastModified || "",
+      sourceProbe.checkedAt || "",
+      sourceProbe.status || null,
+      pageId
+    );
+  }
+
+  function refreshCacheVariant(pageId, crawlerProfile, cacheData, sourceProbe = {}) {
+    statements.refreshPageCache.run(
+      cacheData.expiresAt,
+      sourceProbe.etag || "",
+      sourceProbe.lastModified || "",
+      sourceProbe.checkedAt || "",
+      sourceProbe.status || null,
+      pageId,
+      crawlerProfile
+    );
+    statements.refreshPageCacheFields.run(
+      cacheData.expiresAt,
+      sourceProbe.etag || "",
+      sourceProbe.lastModified || "",
+      sourceProbe.checkedAt || "",
+      sourceProbe.status || null,
+      pageId
     );
   }
 
@@ -391,6 +635,34 @@ function createDatabase(dbPath) {
 
   function getPageCache(pageId, crawlerProfile) {
     return statements.getPageCache.get(pageId, crawlerProfile);
+  }
+
+  function listPageCacheVariants(pageId) {
+    return statements.listPageCacheVariants.all(pageId);
+  }
+
+  function listCachePurgeCandidates({ url = "", domain = "", crawlerProfile = "" } = {}) {
+    if (url && crawlerProfile) return statements.listCacheByUrlAndProfile.all(url, crawlerProfile);
+    if (url) return statements.listCacheByUrl.all(url);
+    if (domain && crawlerProfile) return statements.listCacheByDomainAndProfile.all(domain, crawlerProfile);
+    if (domain) return statements.listCacheByDomain.all(domain);
+    return [];
+  }
+
+  function deleteCacheRecords(cacheRecords) {
+    const touchedPageIds = new Set();
+
+    for (const record of cacheRecords || []) {
+      statements.deletePageCache.run(record.id);
+      touchedPageIds.add(record.page_id);
+    }
+
+    for (const pageId of touchedPageIds) {
+      const remaining = statements.countPageCaches.get(pageId);
+      if (Number(remaining.count || 0) === 0) statements.clearPageCacheFields.run(pageId);
+    }
+
+    return { deletedRecords: (cacheRecords || []).length };
   }
 
   function saveAiAnalysis(pageId, crawlerProfile, analysis) {
@@ -519,14 +791,18 @@ function createDatabase(dbPath) {
   function queueDiscoveredSiteUrls(domain, limit = 50) {
     const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 500));
     const now = new Date().toISOString();
-    const urls = statements.listDiscoveredSiteUrls.all(domain, safeLimit);
+    const urls = statements.listDiscoveredSiteUrls.all(domain, domain, domain, safeLimit);
 
     for (const entry of urls) {
       statements.updateSiteUrlStatus.run("queued", now, entry.id);
       ensurePageRecord(new URL(entry.url));
     }
 
-    return urls.map((entry) => ({ ...entry, status: "queued" }));
+    return urls.map((entry) => ({
+      ...entry,
+      status: "queued",
+      refreshPriority: calculateRefreshPriority(entry),
+    }));
   }
 
   function listQueuedSiteUrls(domain, limit = 5) {
@@ -538,8 +814,53 @@ function createDatabase(dbPath) {
     statements.updateSiteUrlStatusByUrl.run(status, new Date().toISOString(), domain, url);
   }
 
+  function saveRedirectCheck(domain, check) {
+    const site = ensureSiteRecord(domain);
+    statements.upsertRedirectCheck.run(
+      site.id,
+      check.url,
+      check.finalUrl,
+      check.finalStatus,
+      check.hopCount,
+      JSON.stringify(check.chain || []),
+      check.error || "",
+      check.checkedAt || new Date().toISOString()
+    );
+  }
+
+  function listRedirectChecks(domain, limit = 500) {
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 500, 5000));
+    return statements.listRedirectChecks.all(domain, safeLimit).map((row) => ({
+      ...row,
+      chain: JSON.parse(row.chain || "[]"),
+    }));
+  }
+
+  function getInternalLinkGraph(domain, options = {}) {
+    const limit = safeLimit(options.limit, 500, 5000);
+    const url = options.url ? normalizeUrl(options.url) : "";
+
+    return {
+      domain,
+      url,
+      links: statements.listInternalLinkGraph.all(domain, domain, limit),
+      inboundLinks: url ? statements.listInboundLinks.all(domain, domain, url, limit) : [],
+      outboundLinks: url ? statements.listOutboundLinks.all(domain, url, limit) : [],
+    };
+  }
+
   function getSiteReport(domain) {
-    const inventory = statements.listSiteUrlInventory.all(domain, domain, domain);
+    const inventory = statements.listSiteUrlInventory.all(domain, domain, domain)
+      .map((entry) => ({
+        ...entry,
+        refreshPriority: calculateRefreshPriority(entry),
+      }));
+    const redirectChecks = listRedirectChecks(domain, 500);
+    const duplicateCanonicalGroups = statements.listDuplicateCanonicalGroups.all(domain).map((group) => ({
+      canonical: group.canonical,
+      pageCount: group.page_count,
+      urls: String(group.urls || "").split("\n").filter(Boolean),
+    }));
     const orphanUrls = inventory
       .filter((entry) => entry.inbound_count === 0 && !isRootUrl(entry.url))
       .slice(0, 200);
@@ -548,6 +869,15 @@ function createDatabase(dbPath) {
       .slice(0, 200);
     const brokenPages = inventory
       .filter((entry) => Number(entry.http_status || 0) >= 400)
+      .slice(0, 200);
+    const brokenLinks = redirectChecks
+      .filter((entry) => Number(entry.final_status || 0) >= 400 || entry.error)
+      .slice(0, 200);
+    const redirectChains = redirectChecks
+      .filter((entry) => entry.hop_count > 0 || entry.error)
+      .slice(0, 200);
+    const priorityUrls = [...inventory]
+      .sort((a, b) => b.refreshPriority - a.refreshPriority || a.depth - b.depth || a.url.localeCompare(b.url))
       .slice(0, 200);
 
     return {
@@ -560,11 +890,19 @@ function createDatabase(dbPath) {
         discoveredCount: inventory.filter((entry) => entry.status === "discovered").length,
         orphanCount: orphanUrls.length,
         unrenderedCount: unrenderedUrls.length,
-        brokenCount: brokenPages.length,
+        brokenCount: Math.max(brokenPages.length, brokenLinks.length),
+        brokenLinkCount: brokenLinks.length,
+        brokenPageCount: brokenPages.length,
+        duplicateCanonicalGroupCount: duplicateCanonicalGroups.length,
+        redirectChainCount: redirectChains.length,
       },
       orphanUrls,
       unrenderedUrls,
       brokenPages,
+      brokenLinks,
+      duplicateCanonicalGroups,
+      priorityUrls,
+      redirectChains,
     };
   }
 
@@ -574,25 +912,41 @@ function createDatabase(dbPath) {
     ensureSiteRecord,
     getPage: (url) => statements.getPage.get(url),
     getPageCache,
+    listPageCacheVariants,
     getSiteDiscovery,
     getSiteReport,
     getSeoReport,
+    getInternalLinkGraph,
     healthCheck: () => statements.healthCheck.get(),
     listPages: () => statements.listPages.all(),
+    listCachePurgeCandidates,
     listQueuedSiteUrls,
+    listRedirectChecks,
     listSiteUrls,
     listSites: () => statements.listSites.all(),
     markCached,
     markError,
+    markSourceProbe,
+    refreshCacheVariant,
+    deleteCacheRecords,
     queueDiscoveredSiteUrls,
     recordEvent,
     saveAiAnalysis,
     saveInternalSiteUrls,
     saveLinks,
+    saveRedirectCheck,
     saveSiteDiscovery,
     saveSeoReport,
     updateSiteUrlStatus,
   };
+}
+
+function normalizeUrl(value) {
+  return new URL(value).href;
+}
+
+function safeLimit(value, fallback, max) {
+  return Math.max(1, Math.min(Number(value) || fallback, max));
 }
 
 function isRootUrl(value) {
@@ -602,6 +956,21 @@ function isRootUrl(value) {
   } catch {
     return false;
   }
+}
+
+function calculateRefreshPriority(entry) {
+  let score = 0;
+
+  if (entry.sitemap_url) score += 25;
+  if (entry.source === "sitemap") score += 15;
+  if (entry.source === "internal_link") score += 8;
+  score += Math.min(30, Number(entry.inbound_count || 0) * 5);
+  score += Math.max(0, 10 - Number(entry.depth || 0) * 2);
+  if (!entry.last_rendered_at && entry.status !== "rendered") score += 20;
+  if (entry.status === "queued") score += 5;
+  if (Number(entry.http_status || 0) >= 400) score -= 25;
+
+  return Math.max(0, score);
 }
 
 function ensureColumn(db, table, column, definition) {

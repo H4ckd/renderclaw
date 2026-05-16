@@ -81,6 +81,33 @@ function validateConfig(runtimeConfig) {
   if (!Number.isInteger(runtimeConfig.maxHtmlBytes) || runtimeConfig.maxHtmlBytes < 1024) {
     errors.push("rendering.maxHtmlBytes must be >= 1024");
   }
+  if (!Number.isInteger(runtimeConfig.cacheTtlMs) || runtimeConfig.cacheTtlMs < 1000) {
+    errors.push("cache.ttlSeconds must be >= 1");
+  }
+  if (!Number.isInteger(runtimeConfig.staleTtlMs) || runtimeConfig.staleTtlMs < 0) {
+    errors.push("cache.staleTtlSeconds must be >= 0");
+  }
+  if (!Number.isInteger(runtimeConfig.sourceProbeTimeoutMs) || runtimeConfig.sourceProbeTimeoutMs < 500) {
+    errors.push("cache.sourceProbeTimeoutMs must be >= 500");
+  }
+  for (const [index, rule] of runtimeConfig.cacheRules.entries()) {
+    if (rule.ttlSeconds !== undefined && (!Number.isInteger(rule.ttlSeconds) || rule.ttlSeconds < 1)) {
+      errors.push(`cache.rules[${index}].ttlSeconds must be >= 1`);
+    }
+    if (
+      rule.staleTtlSeconds !== undefined &&
+      (!Number.isInteger(rule.staleTtlSeconds) || rule.staleTtlSeconds < 0)
+    ) {
+      errors.push(`cache.rules[${index}].staleTtlSeconds must be >= 0`);
+    }
+    if (rule.pathPattern) {
+      try {
+        new RegExp(rule.pathPattern);
+      } catch (_error) {
+        errors.push(`cache.rules[${index}].pathPattern must be a valid regular expression`);
+      }
+    }
+  }
   if (runtimeConfig.rateLimit.enabled) {
     if (!Number.isInteger(runtimeConfig.rateLimit.windowMs) || runtimeConfig.rateLimit.windowMs < 1000) {
       errors.push("rateLimit.windowMs must be >= 1000");
@@ -100,6 +127,12 @@ function validateConfig(runtimeConfig) {
   }
   if (!Number.isInteger(runtimeConfig.crawl.maxDepth) || runtimeConfig.crawl.maxDepth < 0) {
     errors.push("crawl.maxDepth must be >= 0");
+  }
+  if (!Number.isInteger(runtimeConfig.crawl.maxRedirectBatch) || runtimeConfig.crawl.maxRedirectBatch < 1) {
+    errors.push("crawl.maxRedirectBatch must be >= 1");
+  }
+  if (!Number.isInteger(runtimeConfig.crawl.maxRedirectHops) || runtimeConfig.crawl.maxRedirectHops < 0) {
+    errors.push("crawl.maxRedirectHops must be >= 0");
   }
   if (runtimeConfig.isProduction && runtimeConfig.allowedDomains.length === 0) {
     errors.push("ALLOWED_DOMAINS is required when NODE_ENV=production");
@@ -129,6 +162,8 @@ const config = {
   dataDir: path.resolve(stringFromEnv("DATA_DIR", fileConfig.server.dataDir)),
   cacheTtlMs: numberFromEnv("CACHE_TTL_SECONDS", fileConfig.cache.ttlSeconds) * 1000,
   staleTtlMs: numberFromEnv("STALE_TTL_SECONDS", fileConfig.cache.staleTtlSeconds) * 1000,
+  sourceProbeTimeoutMs: numberFromEnv("SOURCE_PROBE_TIMEOUT_MS", fileConfig.cache.sourceProbeTimeoutMs || 5000),
+  cacheRules: fileConfig.cache.rules || [],
   concurrency: numberFromEnv("RENDER_CONCURRENCY", fileConfig.rendering.concurrency),
   maxQueueSize: numberFromEnv("MAX_QUEUE_SIZE", fileConfig.rendering.maxQueueSize),
   maxRenderCount: numberFromEnv("MAX_RENDER_COUNT", fileConfig.rendering.maxRenderCount),
@@ -150,6 +185,8 @@ const config = {
     maxQueueBatch: numberFromEnv("CRAWL_MAX_QUEUE_BATCH", fileConfig.crawl?.maxQueueBatch || 50),
     maxRenderBatch: numberFromEnv("CRAWL_MAX_RENDER_BATCH", fileConfig.crawl?.maxRenderBatch || 5),
     maxDepth: numberFromEnv("CRAWL_MAX_DEPTH", fileConfig.crawl?.maxDepth || 2),
+    maxRedirectBatch: numberFromEnv("CRAWL_MAX_REDIRECT_BATCH", fileConfig.crawl?.maxRedirectBatch || 25),
+    maxRedirectHops: numberFromEnv("CRAWL_MAX_REDIRECT_HOPS", fileConfig.crawl?.maxRedirectHops || 5),
   },
   ai: {
     enabled: booleanFromEnv("AI_ENABLED", fileConfig.ai.enabled),

@@ -11,7 +11,9 @@
   },
   "cache": {
     "ttlSeconds": 3600,
-    "staleTtlSeconds": 86400
+    "staleTtlSeconds": 86400,
+    "sourceProbeTimeoutMs": 5000,
+    "rules": []
   },
   "rendering": {
     "concurrency": 3,
@@ -30,7 +32,9 @@
   "crawl": {
     "maxQueueBatch": 50,
     "maxRenderBatch": 5,
-    "maxDepth": 2
+    "maxDepth": 2,
+    "maxRedirectBatch": 25,
+    "maxRedirectHops": 5
   },
   "ai": {
     "enabled": true,

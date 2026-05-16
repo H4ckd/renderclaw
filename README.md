@@ -171,19 +171,51 @@ This includes:
 
 The `data/` directory is ignored by Git.
 
+## Cache freshness
+
+RenderClaw uses a global cache TTL and can override it per domain and path pattern:
+
+```json
+{
+  "cache": {
+    "ttlSeconds": 3600,
+    "staleTtlSeconds": 86400,
+    "rules": [
+      {
+        "id": "fast-changing-blog",
+        "domain": "example.com",
+        "pathPattern": "^/blog/",
+        "ttlSeconds": 900,
+        "staleTtlSeconds": 21600
+      }
+    ]
+  }
+}
+```
+
+Rules are evaluated in order. When a cached snapshot is stale but still inside the stale window, RenderClaw serves it immediately and refreshes it in the background.
+
+When a crawler cache variant already exists, RenderClaw can use `ETag` and `Last-Modified` validators from the source page to avoid unnecessary browser renders. If a lightweight `HEAD` probe shows the source has not changed, RenderClaw extends the cache freshness window and records the probe status in the admin cache metadata.
+
 ## Endpoints
 
 ```text
 GET /health
 GET /metrics
+DELETE /admin/cache
+POST /admin/cache/refresh
 GET /admin/sites
 GET /admin/sites/:domain/discovery
 POST /admin/sites/:domain/discovery
+GET /admin/sites/:domain/links
 GET /admin/sites/:domain/report
+GET /admin/sites/:domain/redirects
+POST /admin/sites/:domain/redirects/analyze
 GET /admin/sites/:domain/urls
 POST /admin/sites/:domain/crawl/queue
 POST /admin/sites/:domain/crawl/render
 GET /admin/pages
+GET /admin/pages/:id/cache
 GET /admin/pages/:id/report
 GET /:domain/*?
 ```

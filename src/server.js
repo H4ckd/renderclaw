@@ -20,7 +20,9 @@ const { createMetrics } = require("./observability/metrics");
 const { createBrowserManager } = require("./rendering/browserManager");
 const { createRenderQueue } = require("./rendering/renderQueue");
 const { createRenderer } = require("./rendering/renderer");
+const { createRedirectAnalyzer } = require("./seo/redirectAnalyzer");
 const { createSiteDiscovery } = require("./seo/siteDiscovery");
+const { createSourceProbe } = require("./seo/sourceProbe");
 const { createDatabase } = require("./storage/database");
 const { createHtmlCache } = require("./storage/htmlCache");
 
@@ -36,6 +38,7 @@ function createServer() {
     cacheDir: paths.cacheDir,
     cacheTtlMs: config.cacheTtlMs,
     staleTtlMs: config.staleTtlMs,
+    cacheRules: config.cacheRules,
   });
   const queue = createRenderQueue(config.concurrency, config.maxQueueSize);
   const browserManager = createBrowserManager(config);
@@ -43,6 +46,8 @@ function createServer() {
   const adminAuth = createAdminAuth(config.adminToken);
   const rateLimiter = createRateLimiter(config.rateLimit);
   const siteDiscovery = createSiteDiscovery();
+  const redirectAnalyzer = createRedirectAnalyzer({ maxHops: config.crawl.maxRedirectHops });
+  const sourceProbe = createSourceProbe({ timeoutMs: config.sourceProbeTimeoutMs });
   const healthChecks = createHealthChecks({
     browserManager,
     htmlCache,
@@ -60,16 +65,46 @@ function createServer() {
     htmlCache,
     metrics,
     pageStore,
+    sourceProbe,
   });
 
   app.use(requestContext);
 
   registerHealthRoutes(app, { healthChecks, metrics, queue });
-  registerAdminRoutes(app, pageStore, adminAuth, siteDiscovery, config.crawl, {
-    render: (targetUrl, pageRecord, crawlerProfile, requestId) => (
-      queue.enqueue(() => renderer.renderPage(targetUrl, pageRecord, crawlerProfile, { requestId }))
-    ),
-  });
+  registerAdminRoutes(
+    app,
+    pageStore,
+    adminAuth,
+    siteDiscovery,
+    config.crawl,
+    {
+      render: (targetUrl, pageRecord, crawlerProfile, requestId) => (
+        queue.enqueue(() => renderer.renderPage(targetUrl, pageRecord, crawlerProfile, { requestId }))
+      ),
+    },
+    redirectAnalyzer,
+    {
+      inspectPage: (pageId) => pageStore
+        .listPageCacheVariants(pageId)
+        .map((cacheRecord) => htmlCache.inspect(cacheRecord)),
+      purge: ({ domain, url, crawlerProfile }) => {
+        if (!domain && !url) throw new Error("Provide either domain or url.");
+        const normalizedUrl = url ? new URL(url).href : "";
+        const candidates = pageStore.listCachePurgeCandidates({ domain, url: normalizedUrl, crawlerProfile });
+        const fileResults = htmlCache.purge(candidates);
+        const dbResult = pageStore.deleteCacheRecords(candidates);
+
+        return {
+          domain,
+          url: normalizedUrl,
+          crawlerProfile,
+          candidateCount: candidates.length,
+          ...dbResult,
+          files: fileResults,
+        };
+      },
+    }
+  );
   registerMetricsRoutes(app, { adminAuth, browserManager, metrics, queue });
 
   // This catch-all route must be registered after fixed routes such as
