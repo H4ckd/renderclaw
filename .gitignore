@@ -20,10 +20,17 @@
 
 # production
 /build
+/data
+/cache
+/logs
+/tmp
+/config/*.local.json
+/config/secrets.json
 
 # misc
 .DS_Store
 *.pem
+.idea
 
 # debug
 npm-debug.log*

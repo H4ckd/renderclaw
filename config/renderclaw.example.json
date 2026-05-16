@@ -1,0 +1,29 @@
+{
+  "app": {
+    "name": "RenderClaw",
+    "slug": "renderclaw"
+  },
+  "server": {
+    "port": 5000,
+    "dataDir": "data",
+    "allowedDomains": ["example.com", "www.example.com"]
+  },
+  "cache": {
+    "ttlSeconds": 3600,
+    "staleTtlSeconds": 86400
+  },
+  "rendering": {
+    "concurrency": 3,
+    "maxRenderCount": 80,
+    "pageTimeoutMs": 45000,
+    "extraWaitMs": 1200,
+    "maxHtmlBytes": 5242880
+  },
+  "ai": {
+    "enabled": true,
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "timeoutMs": 4500,
+    "apiKeyEnv": "OPENAI_API_KEY"
+  }
+}
