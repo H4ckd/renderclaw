@@ -1,6 +1,9 @@
 const path = require("node:path");
 const { URL } = require("node:url");
 
+// Broad crawler allow-detection list. This decides whether RenderClaw should
+// serve a prerendered page or redirect the visitor to the original site.
+// For crawler-specific optimization priorities, edit crawlerProfiles.js.
 const BOT_AGENTS = [
   "googlebot", "yahoo! slurp", "bingbot", "yandex", "baiduspider",
   "facebookexternalhit", "twitterbot", "rogerbot", "linkedinbot", "embedly",
@@ -22,6 +25,9 @@ const IGNORE_EXTENSIONS = new Set([
   ".json", ".map"
 ]);
 
+// Simple user-agent matching is intentionally transparent and easy to extend.
+// Production anti-abuse controls should live outside this function, for example
+// reverse-proxy rate limits or verified bot checks.
 function isCrawler(req) {
   const agent = String(req.headers["user-agent"] || "").toLowerCase();
   return BOT_AGENTS.some((bot) => agent.includes(bot));
@@ -32,6 +38,9 @@ function shouldIgnoreRequest(url) {
   return IGNORE_EXTENSIONS.has(path.extname(parsed.pathname).toLowerCase());
 }
 
+// Domain validation prevents obvious malformed URLs and supports an optional
+// allowlist. In public production deployments, set ALLOWED_DOMAINS to avoid
+// operating RenderClaw as an open rendering proxy.
 function validateDomain(domain, allowedDomains) {
   const normalized = String(domain || "").trim().toLowerCase();
 

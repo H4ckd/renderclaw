@@ -1,5 +1,9 @@
 const puppeteer = require("puppeteer");
 
+// Owns the shared Chromium instance.
+// RenderClaw reuses one browser for many pages to reduce startup cost, then
+// recycles it after maxRenderCount to avoid slow memory growth. If you add a
+// browser pool later, keep this module as the only place that launches Chrome.
 function createBrowserManager(config) {
   let browser;
   let renderCount = 0;
@@ -14,6 +18,8 @@ function createBrowserManager(config) {
       await browser.close().catch(() => {});
     }
 
+    // These flags are conservative defaults for server environments. Adjust
+    // here when adding Docker support or stricter sandboxing profiles.
     browser = await puppeteer.launch({
       headless: "new",
       args: [

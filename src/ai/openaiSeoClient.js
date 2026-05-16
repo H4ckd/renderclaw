@@ -1,5 +1,11 @@
+// AI SEO analysis client.
+// The public contract is analyze({ targetUrl, crawlerProfile, extracted }).
+// Swap or extend this module to support additional providers while keeping the
+// returned analysis shape stable for renderer.js and database.js.
 function createOpenAiSeoClient(config, logger) {
   async function analyze({ targetUrl, crawlerProfile, extracted }) {
+    // AI is optional by design. RenderClaw must still prerender pages in local
+    // development, offline deployments, and privacy-focused installations.
     if (!config.enabled || !config.apiKey) {
       return fallbackAnalysis(crawlerProfile, "AI disabled or OPENAI_API_KEY missing");
     }
@@ -46,6 +52,9 @@ function createOpenAiSeoClient(config, logger) {
 }
 
 function buildRequest(model, targetUrl, crawlerProfile, extracted) {
+  // The schema forces the model to return machine-readable recommendations.
+  // Prompt rules are conservative: improve metadata using page evidence, do
+  // not create new facts or rewrite the page intent.
   return {
     model,
     instructions: [
@@ -129,6 +138,9 @@ function extractOutputText(payload) {
 }
 
 function normalizeRecommendations(parsed, crawlerProfile) {
+  // Normalize and bound strings before they reach HTML injection. These limits
+  // keep metadata practical for search/social surfaces and avoid oversized AI
+  // outputs from bloating crawler snapshots.
   return {
     crawlerProfile: crawlerProfile.id,
     title: limit(parsed.title, 70),
@@ -152,6 +164,8 @@ function normalizeRecommendations(parsed, crawlerProfile) {
 }
 
 function fallbackAnalysis(crawlerProfile, reason) {
+  // Deterministic fallback keeps the pipeline reliable when AI is disabled,
+  // times out, or returns invalid output.
   return {
     provider: "fallback",
     model: "deterministic",

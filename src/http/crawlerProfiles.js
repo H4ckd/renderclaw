@@ -1,3 +1,7 @@
+// Maps user-agent strings to optimization profiles.
+// Add new crawlers here when they need distinct metadata priorities or cache
+// variants. The id becomes part of the cache key, so changing ids invalidates
+// existing per-crawler cache records.
 function detectCrawlerProfile(req) {
   const agent = String(req.headers["user-agent"] || "").toLowerCase();
 

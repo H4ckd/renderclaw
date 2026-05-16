@@ -1,3 +1,7 @@
+// Small in-process render queue.
+// This protects memory and CPU by limiting concurrent Puppeteer pages. Replace
+// this module, not renderer.js, if RenderClaw later gains Redis-backed or
+// distributed workers.
 function createRenderQueue(concurrency) {
   let activeRenders = 0;
   const pendingRenders = [];

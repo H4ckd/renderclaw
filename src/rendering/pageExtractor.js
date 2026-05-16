@@ -1,3 +1,7 @@
+// Runs inside the rendered page and extracts signals used by storage and AI.
+// Keep this extractor bounded: every collection is sliced to avoid storing or
+// sending huge pages to the AI provider. Add new SEO signals here when they are
+// needed by the optimizer or dashboard.
 async function extractPageData(tab) {
   return tab.evaluate(() => {
     const absoluteUrl = (value) => {

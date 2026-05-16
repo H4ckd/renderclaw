@@ -2,6 +2,10 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
+// Filesystem HTML cache.
+// The database stores metadata and points to html_path; this component only
+// reads/writes snapshot files and evaluates fresh/stale windows. The variant is
+// normally a crawler profile id such as "google" or "social".
 function createHtmlCache({ cacheDir, cacheTtlMs, staleTtlMs }) {
   function cacheKeyFor(url, variant) {
     return crypto.createHash("sha256").update(`${variant}:${url}`).digest("hex");
@@ -19,6 +23,8 @@ function createHtmlCache({ cacheDir, cacheTtlMs, staleTtlMs }) {
     const staleUntil = expiresAt + staleTtlMs;
     const now = Date.now();
 
+    // "stale" means the snapshot can still be served immediately while a
+    // background refresh updates it for the next crawler request.
     return {
       html,
       fresh: now <= expiresAt,

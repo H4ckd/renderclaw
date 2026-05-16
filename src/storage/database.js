@@ -1,9 +1,19 @@
 const { URL } = require("node:url");
 const { DatabaseSync } = require("node:sqlite");
 
+// SQLite storage adapter.
+// This is the persistence boundary for RenderClaw. Other components should use
+// the returned methods instead of preparing SQL directly. If the schema grows,
+// add migrations here or split them into a dedicated migrations module.
 function createDatabase(dbPath) {
   const db = new DatabaseSync(dbPath);
 
+  // Current schema is created idempotently on startup. It tracks:
+  // - sites and pages discovered by requests;
+  // - links extracted from rendered pages;
+  // - render events and errors;
+  // - crawler-specific cache variants;
+  // - AI analyses used to optimize a snapshot.
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 5000;
@@ -170,6 +180,8 @@ function createDatabase(dbPath) {
   };
 
   function ensurePageRecord(targetUrl) {
+    // Upsert site/page for every request so the database becomes an audit trail
+    // of what RenderClaw has been asked to inspect.
     const now = new Date().toISOString();
     const domain = targetUrl.hostname;
 
@@ -182,6 +194,8 @@ function createDatabase(dbPath) {
   }
 
   function markCached(pageId, cacheData, extracted, timingMs, httpStatus) {
+    // pages keeps the latest page-level SEO summary; page_caches keeps the
+    // per-crawler rendered artifact metadata.
     const now = new Date();
     statements.cachePage.run(
       httpStatus,
@@ -215,6 +229,8 @@ function createDatabase(dbPath) {
   }
 
   function saveLinks(pageId, links) {
+    // Links are deduplicated by SQLite. This keeps extraction simple while
+    // preserving enough data for future site-graph features.
     const now = new Date().toISOString();
 
     for (const link of links) {

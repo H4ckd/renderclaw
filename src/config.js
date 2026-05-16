@@ -1,6 +1,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+// Central configuration loader.
+// Order of precedence:
+// 1. config/renderclaw.config.json (required, committed defaults)
+// 2. config/renderclaw.local.json (optional, ignored by Git)
+// 3. environment variables (highest priority for production/secrets)
 const DEFAULT_CONFIG_FILE = path.resolve("config", "renderclaw.config.json");
 const LOCAL_CONFIG_FILE = path.resolve("config", "renderclaw.local.json");
 
@@ -58,6 +63,8 @@ const fileConfig = deepMerge(
   loadConfigFile(LOCAL_CONFIG_FILE)
 );
 
+// Flatten the JSON config into the runtime shape used by the rest of the app.
+// Add new public config here only after adding it to config/renderclaw.config.json.
 const config = {
   appName: fileConfig.app.name,
   appSlug: fileConfig.app.slug,
@@ -80,6 +87,8 @@ const config = {
   },
 };
 
+// Runtime paths are derived from dataDir so deployments can move all mutable
+// files by changing DATA_DIR or server.dataDir in the config file.
 const paths = {
   cacheDir: path.join(config.dataDir, "cache"),
   logDir: path.join(config.dataDir, "logs"),

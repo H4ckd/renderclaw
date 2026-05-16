@@ -1,3 +1,7 @@
+// Network policy for resources loaded inside Puppeteer.
+// CSS and images are intentionally allowed so crawler snapshots preserve visual
+// context and social images can be discovered. Heavy media, fonts, and common
+// trackers are blocked to reduce render time and bandwidth.
 const BLOCKED_HOSTS = [
   "google-analytics.com",
   "googletagmanager.com",

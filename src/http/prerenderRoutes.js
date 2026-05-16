@@ -2,6 +2,12 @@ const { buildTargetUrl, isCrawler, shouldIgnoreRequest } = require("./crawlerRul
 const { detectCrawlerProfile } = require("./crawlerProfiles");
 const { setSeoHeaders } = require("./seoHeaders");
 
+// Main RenderClaw gateway route.
+// It handles four decisions:
+// 1. validate and normalize the target URL;
+// 2. redirect humans to the source site;
+// 3. serve fresh/stale crawler cache when available;
+// 4. enqueue a render when the cache is missing or expired.
 function registerPrerenderRoutes(app, deps) {
   const {
     allowedDomains,
@@ -14,6 +20,9 @@ function registerPrerenderRoutes(app, deps) {
 
   const refreshesInFlight = new Set();
 
+  // Stale cache should be fast: respond immediately, then refresh in the
+  // background. The key includes crawlerProfile.id so social and Google
+  // variants never collapse into one refresh job.
   function refreshInBackground(targetUrl, pageRecord, crawlerProfile) {
     const refreshKey = `${crawlerProfile.id}:${targetUrl.href}`;
     if (refreshesInFlight.has(refreshKey)) return;
@@ -27,6 +36,8 @@ function registerPrerenderRoutes(app, deps) {
       .finally(() => refreshesInFlight.delete(refreshKey));
   }
 
+  // Keep this route last in server.js. It is intentionally broad and treats
+  // the first path segment as the target domain.
   app.get("/:domain/*?", async (req, res) => {
     let targetUrl;
 
@@ -42,6 +53,8 @@ function registerPrerenderRoutes(app, deps) {
       return;
     }
 
+    // The page record is created for both humans and crawlers so the database
+    // becomes a useful map of what RenderClaw has seen.
     const pageRecord = pageStore.ensurePageRecord(targetUrl);
 
     if (!isCrawler(req)) {
@@ -50,6 +63,8 @@ function registerPrerenderRoutes(app, deps) {
     }
 
     const crawlerProfile = detectCrawlerProfile(req);
+    // Cache is scoped by crawler profile because each crawler can receive
+    // different metadata, Open Graph tags, or JSON-LD recommendations.
     const pageCache = pageStore.getPageCache(pageRecord.id, crawlerProfile.id);
     const cached = htmlCache.read(pageCache);
 
