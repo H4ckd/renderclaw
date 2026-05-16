@@ -2,11 +2,21 @@
 
 Open source AI-assisted prerendering for crawler-ready websites.
 
+<p align="center">
+  <img src="assets/renderclaw-mascot.png" alt="Nexa, the RenderClaw cyber lynx mascot" width="280">
+</p>
+
 RenderClaw is a self-hosted rendering gateway that turns crawler requests into fast, optimized, fully rendered HTML snapshots. It is built for developers, SEO engineers, agencies, and teams that need modern JavaScript-heavy or poorly optimized websites to be readable by search engines and social preview crawlers.
 
 Human visitors are redirected to the original website. Crawlers receive a rendered, cacheable, crawler-specific HTML version of the same page.
 
 > RenderClaw is not a cloaking tool. Crawler-facing output should represent the real content of the source page.
+
+## Mascot
+
+Meet **Nexa**, the RenderClaw cyber lynx.
+
+Nexa represents the project’s core traits: sharp crawler instincts, fast rendering, careful protection of source content, and clean developer-friendly intelligence. The lynx was chosen for its agility, precision, and watchful nature.
 
 ## Features
 
