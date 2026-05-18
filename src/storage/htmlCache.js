@@ -60,6 +60,7 @@ function createHtmlCache({ cacheDir, cacheTtlMs, staleTtlMs, cacheRules = [] }) 
       policy,
       sourceCheckedAt: cacheRecord.source_checked_at || null,
       sourceEtag: cacheRecord.source_etag || "",
+      sourceHash: cacheRecord.source_hash || "",
       sourceLastModified: cacheRecord.source_last_modified || "",
       sourceStatus: cacheRecord.source_status || null,
       stale,

@@ -47,7 +47,10 @@ function createServer() {
   const rateLimiter = createRateLimiter(config.rateLimit);
   const siteDiscovery = createSiteDiscovery();
   const redirectAnalyzer = createRedirectAnalyzer({ maxHops: config.crawl.maxRedirectHops });
-  const sourceProbe = createSourceProbe({ timeoutMs: config.sourceProbeTimeoutMs });
+  const sourceProbe = createSourceProbe({
+    maxHashBytes: config.sourceHashMaxBytes,
+    timeoutMs: config.sourceProbeTimeoutMs,
+  });
   const healthChecks = createHealthChecks({
     browserManager,
     htmlCache,

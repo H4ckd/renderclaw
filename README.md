@@ -195,7 +195,7 @@ RenderClaw uses a global cache TTL and can override it per domain and path patte
 
 Rules are evaluated in order. When a cached snapshot is stale but still inside the stale window, RenderClaw serves it immediately and refreshes it in the background.
 
-When a crawler cache variant already exists, RenderClaw can use `ETag` and `Last-Modified` validators from the source page to avoid unnecessary browser renders. If a lightweight `HEAD` probe shows the source has not changed, RenderClaw extends the cache freshness window and records the probe status in the admin cache metadata.
+When a crawler cache variant already exists, RenderClaw can use `ETag` and `Last-Modified` validators from the source page to avoid unnecessary browser renders. If validators are unavailable, it falls back to a bounded SHA-256 source hash. If the source has not changed, RenderClaw extends the cache freshness window and records the probe status in the admin cache metadata.
 
 ## Endpoints
 

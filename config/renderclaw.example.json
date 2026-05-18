@@ -13,6 +13,7 @@
     "ttlSeconds": 3600,
     "staleTtlSeconds": 86400,
     "sourceProbeTimeoutMs": 5000,
+    "sourceHashMaxBytes": 262144,
     "rules": [
       {
         "id": "fast-changing-blog",

@@ -90,6 +90,9 @@ function validateConfig(runtimeConfig) {
   if (!Number.isInteger(runtimeConfig.sourceProbeTimeoutMs) || runtimeConfig.sourceProbeTimeoutMs < 500) {
     errors.push("cache.sourceProbeTimeoutMs must be >= 500");
   }
+  if (!Number.isInteger(runtimeConfig.sourceHashMaxBytes) || runtimeConfig.sourceHashMaxBytes < 1024) {
+    errors.push("cache.sourceHashMaxBytes must be >= 1024");
+  }
   for (const [index, rule] of runtimeConfig.cacheRules.entries()) {
     if (rule.ttlSeconds !== undefined && (!Number.isInteger(rule.ttlSeconds) || rule.ttlSeconds < 1)) {
       errors.push(`cache.rules[${index}].ttlSeconds must be >= 1`);
@@ -163,6 +166,7 @@ const config = {
   cacheTtlMs: numberFromEnv("CACHE_TTL_SECONDS", fileConfig.cache.ttlSeconds) * 1000,
   staleTtlMs: numberFromEnv("STALE_TTL_SECONDS", fileConfig.cache.staleTtlSeconds) * 1000,
   sourceProbeTimeoutMs: numberFromEnv("SOURCE_PROBE_TIMEOUT_MS", fileConfig.cache.sourceProbeTimeoutMs || 5000),
+  sourceHashMaxBytes: numberFromEnv("SOURCE_HASH_MAX_BYTES", fileConfig.cache.sourceHashMaxBytes || 262144),
   cacheRules: fileConfig.cache.rules || [],
   concurrency: numberFromEnv("RENDER_CONCURRENCY", fileConfig.rendering.concurrency),
   maxQueueSize: numberFromEnv("MAX_QUEUE_SIZE", fileConfig.rendering.maxQueueSize),

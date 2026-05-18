@@ -22,6 +22,7 @@ function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metric
       if (canProbe) {
         const probe = await sourceProbe.probe(targetUrl, {
           etag: existingCache.source_etag || pageRecord.source_etag || "",
+          hash: existingCache.source_hash || pageRecord.source_hash || "",
           lastModified: existingCache.source_last_modified || pageRecord.source_last_modified || "",
         });
         pageStore.markSourceProbe(pageRecord.id, probe);
@@ -87,7 +88,7 @@ function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metric
 
       const cacheData = htmlCache.write(targetUrl.href, html, crawlerProfile.id);
       const timingMs = Date.now() - started;
-      const responseProbe = sourceProbeFromResponse(response);
+      const responseProbe = await sourceProbeFromResponse(sourceProbe, targetUrl, response);
 
       pageStore.markCached(
         pageRecord.id,
@@ -130,12 +131,23 @@ function createRenderer({ aiSeoClient, browserManager, config, htmlCache, metric
   return { renderPage };
 }
 
-function sourceProbeFromResponse(response) {
+async function sourceProbeFromResponse(sourceProbe, targetUrl, response) {
   if (!response) return {};
   const headers = response.headers();
+  if (sourceProbe?.snapshotSource) {
+    const snapshot = await sourceProbe.snapshotSource(targetUrl);
+    return {
+      ...snapshot,
+      etag: snapshot.etag || headers.etag || "",
+      lastModified: snapshot.lastModified || headers["last-modified"] || "",
+      status: snapshot.status || response.status(),
+    };
+  }
+
   return {
     checkedAt: new Date().toISOString(),
     etag: headers.etag || "",
+    hash: "",
     lastModified: headers["last-modified"] || "",
     status: response.status(),
   };

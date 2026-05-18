@@ -538,6 +538,7 @@ test("stores source validators and refreshes cache expiry without rewriting HTML
       {
         checkedAt: "2026-05-16T10:00:00.000Z",
         etag: '"abc"',
+        hash: "hash-a",
         lastModified: "Sat, 16 May 2026 10:00:00 GMT",
         status: 200,
       }
@@ -550,6 +551,7 @@ test("stores source validators and refreshes cache expiry without rewriting HTML
       {
         checkedAt: "2026-05-16T10:30:00.000Z",
         etag: '"abc"',
+        hash: "hash-a",
         lastModified: "Sat, 16 May 2026 10:00:00 GMT",
         status: 304,
       }
@@ -559,9 +561,11 @@ test("stores source validators and refreshes cache expiry without rewriting HTML
     const refreshedCache = pageStore.getPageCache(page.id, "google");
 
     assert.equal(refreshedPage.source_etag, '"abc"');
+    assert.equal(refreshedPage.source_hash, "hash-a");
     assert.equal(refreshedPage.source_status, 304);
     assert.equal(refreshedPage.cache_expires_at, "2026-05-16T11:00:00.000Z");
     assert.equal(refreshedCache.source_status, 304);
+    assert.equal(refreshedCache.source_hash, "hash-a");
     assert.equal(refreshedCache.cache_expires_at, "2026-05-16T11:00:00.000Z");
   } finally {
     pageStore.close();

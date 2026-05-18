@@ -46,6 +46,7 @@ function createDatabase(dbPath) {
       cache_expires_at TEXT,
       source_etag TEXT,
       source_last_modified TEXT,
+      source_hash TEXT,
       source_checked_at TEXT,
       source_status INTEGER,
       last_error TEXT,
@@ -85,6 +86,7 @@ function createDatabase(dbPath) {
       cache_expires_at TEXT NOT NULL,
       source_etag TEXT,
       source_last_modified TEXT,
+      source_hash TEXT,
       source_checked_at TEXT,
       source_status INTEGER,
       timing_ms INTEGER,
@@ -161,10 +163,12 @@ function createDatabase(dbPath) {
   ensureColumn(db, "site_urls", "depth", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "pages", "source_etag", "TEXT");
   ensureColumn(db, "pages", "source_last_modified", "TEXT");
+  ensureColumn(db, "pages", "source_hash", "TEXT");
   ensureColumn(db, "pages", "source_checked_at", "TEXT");
   ensureColumn(db, "pages", "source_status", "INTEGER");
   ensureColumn(db, "page_caches", "source_etag", "TEXT");
   ensureColumn(db, "page_caches", "source_last_modified", "TEXT");
+  ensureColumn(db, "page_caches", "source_hash", "TEXT");
   ensureColumn(db, "page_caches", "source_checked_at", "TEXT");
   ensureColumn(db, "page_caches", "source_status", "INTEGER");
 
@@ -224,9 +228,9 @@ function createDatabase(dbPath) {
     upsertPageCache: db.prepare(`
       INSERT INTO page_caches (
         page_id, crawler_profile, html_path, cache_key, byte_size, last_rendered_at, cache_expires_at,
-        source_etag, source_last_modified, source_checked_at, source_status, timing_ms
+        source_etag, source_last_modified, source_hash, source_checked_at, source_status, timing_ms
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(page_id, crawler_profile) DO UPDATE SET
         html_path = excluded.html_path,
         cache_key = excluded.cache_key,
@@ -235,6 +239,7 @@ function createDatabase(dbPath) {
         cache_expires_at = excluded.cache_expires_at,
         source_etag = excluded.source_etag,
         source_last_modified = excluded.source_last_modified,
+        source_hash = excluded.source_hash,
         source_checked_at = excluded.source_checked_at,
         source_status = excluded.source_status,
         timing_ms = excluded.timing_ms
@@ -243,6 +248,7 @@ function createDatabase(dbPath) {
       UPDATE pages
       SET source_etag = ?,
           source_last_modified = ?,
+          source_hash = ?,
           source_checked_at = ?,
           source_status = ?
       WHERE id = ?
@@ -252,6 +258,7 @@ function createDatabase(dbPath) {
       SET cache_expires_at = ?,
           source_etag = ?,
           source_last_modified = ?,
+          source_hash = ?,
           source_checked_at = ?,
           source_status = ?
       WHERE page_id = ? AND crawler_profile = ?
@@ -261,6 +268,7 @@ function createDatabase(dbPath) {
       SET cache_expires_at = ?,
           source_etag = ?,
           source_last_modified = ?,
+          source_hash = ?,
           source_checked_at = ?,
           source_status = ?,
           last_error = NULL
@@ -573,6 +581,7 @@ function createDatabase(dbPath) {
       cacheData.expiresAt,
       sourceProbe.etag || "",
       sourceProbe.lastModified || "",
+      sourceProbe.hash || "",
       sourceProbe.checkedAt || "",
       sourceProbe.status || null,
       timingMs
@@ -584,6 +593,7 @@ function createDatabase(dbPath) {
     statements.updateSourceProbe.run(
       sourceProbe.etag || "",
       sourceProbe.lastModified || "",
+      sourceProbe.hash || "",
       sourceProbe.checkedAt || "",
       sourceProbe.status || null,
       pageId
@@ -595,6 +605,7 @@ function createDatabase(dbPath) {
       cacheData.expiresAt,
       sourceProbe.etag || "",
       sourceProbe.lastModified || "",
+      sourceProbe.hash || "",
       sourceProbe.checkedAt || "",
       sourceProbe.status || null,
       pageId,
@@ -604,6 +615,7 @@ function createDatabase(dbPath) {
       cacheData.expiresAt,
       sourceProbe.etag || "",
       sourceProbe.lastModified || "",
+      sourceProbe.hash || "",
       sourceProbe.checkedAt || "",
       sourceProbe.status || null,
       pageId
